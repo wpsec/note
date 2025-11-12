@@ -282,7 +282,851 @@ gitlab-runner status #此命令显示GitLab Runner服务的状态。当服务正
 
 
 
-## 一个项目的学习
+## pipeline 语法
+### pipeline 语法 1
+#### job
+每个项目中，使用.gitlab.ci.yml 的 yaml 文件配置 gitlab ci/cd
+
++ 可以定义多个作业（job）
++ 每个作业必须唯一
++ 每个作业独立执行
++ 一个作业最少包含一个 script
+
+```yaml
+job1:
+	script:"execute-script-for-job1"
+job2:
+	script:"execute-script-for-job2"
+# 这里在pipeline中定义了两个作业，每个作业运行不同的命令。命令可以是shell或脚本。
+```
+
+
+
+#### script
+```yaml
+job:
+  script:
+    - uname -a
+    - bundle exec rspec
+```
+
+有时， script命令将需要用单引号或双引号引起来. 例如，包含冒号命令（ : ）需要加引号，以便被包裹的YAML解析器知道来解释整个事情作为一个字符串，而不是一个"键：值"对. 使用特殊字符时要小心： : ， { ， } ， [ ， ] ， , ， & ， * ， # ， ? ， | ， - ， < ， > ， = ! ， % ， @ ， ``` .
+
+
+
+#### before_script
+用于作业之前运行，必须是一个数组。指定 script 与主脚本中指定的任何脚本串联在一起，并在单个 shell 中一起执行，job 里的 before_script 会覆盖全局 before_script
+
+
+
+#### after_script
+用于定义每个作业（包括失败的）之后运行的命令，必须是一个数组。指定脚本在新的 shell 中执行，与任何 before_script 或 script 脚本分开。
+
+可以在全局定义，也可以在 job 中定义。在 job 中定义会覆盖全局
+
+
+
+
+
+#### stages & stage
+阶段，用于控制作业使用的阶段，全局定义，通过 stages 定义阶段顺序与 job，
+
+可以并行 job，但是 job 的名字必须唯一， stage 声明这里是那个阶段，下面的流水线可以是乱的，只要 stage 声明好，stages 做好顺序就行
+
+
+
+并行的时候，如果是一个 runner，会依次执行，如果需要同时执行，最要使用两个 runner，或者 /etc/gitlab-runner/config.toml 里配置 
+
+```plain
+# 同时运行 10 个job任务
+concurrent = 10
+```
+
+  
+
+
+```yaml
+stages：
+  - build
+  - test
+  - deploy
+  
+......
+build1:
+  stage: build
+
+build2:
+	stage: build
+
+test:
+	stage: echo "run test"
+```
+
+
+
+
+
+
+
+before_script (全局)：
+
+echo "before-script!!" - 这个会在每个 job 执行前运行
+
+variables：
+
+定义了一个全局变量 DOMAIN: example.com，所有 job 都可以使用
+
+stages：
+
+定义了两个阶段：build 作业和 deploy 作业，将按顺序执行
+
+
+
+```yaml
+before_script:
+  - echo "before-script!!"
+
+variables:
+  DOMAIN: example.com
+
+stages:
+  - build
+  - deploy
+ 
+
+build:
+  before_script:
+    - echo "before-script in job"
+  stage: build
+  script:
+    - echo "mvn clean "
+    - echo "mvn install"
+  after_script:
+    - echo "after script in job"
+
+
+deploy:
+  stage: deploy
+  script:
+    - echo "hello deploy"
+    
+after_script:
+  - echo "after-script"
+
+```
+
+
+
+#### .pre & .post
+.pre始终是整个管道的第一个运行阶段，.post始终是整个管道的最后一个运行阶段。 用户定义的阶段都在两者之间运行。.pre和.post的顺序无法更改。如果管道仅包含.pre或.post阶段的作业，则不会创建管道。
+
+
+
+
+
+#### variables
+全局变量，pipeline 变量、job 变量、Runne 变量。job 变量优先级最大
+
+
+
+
+
+### pipeline 语法 2
+#### tags
+指定 job 在那个 runner 上运行
+
+![](https://cdn.nlark.com/yuque/0/2025/png/27875807/1762323028892-3a608a33-e7d3-43c8-b8f3-2e28e8a461fe.png)
+
+![](https://cdn.nlark.com/yuque/0/2025/png/27875807/1762323752805-f6067e0f-db32-4a7f-9b52-13d08d87a214.png)
+
+开启运行未指定 runner 的 job
+
+![](https://cdn.nlark.com/yuque/0/2025/png/27875807/1762323776589-a7abdf88-4e2a-4e68-82dc-5475d8029369.png)
+
+```plain
+job:
+  tags:
+    - ruby
+    - postgres
+    - shared
+
+```
+
+
+
+#### allow_failure
+允许作业失败，默认为 false，默认不允许失败，如果 allow_failure: true，失败了也会继续运行。
+
+false 不允许失败
+
+true 允许失败
+
+```plain
+job1:
+  stage: test
+  script:
+    - execute_script_that_will_fail
+  allow_failure: true
+```
+
+
+
+#### when
+控制作业允许
+
++ on_success：默认值，前面的作业都成功了才执行这个作业
++ on_failure：当前面作业失败了，才执行这个作业
++ always：总是执行作业
++ manual：手动执行作业
++ delayed：延迟执行作业
+
+
+
+需要手动执行
+
+![](https://cdn.nlark.com/yuque/0/2025/png/27875807/1762323939718-ef24b9a3-bf36-472b-84e3-e01e35b642f4.png)
+
+延迟执行
+
+![](https://cdn.nlark.com/yuque/0/2025/png/27875807/1762323842518-24f065e6-a917-47b4-9b9e-aaa54476b78d.png)
+
+
+
+
+
+测试.gitlab.ci.yml 文件
+
+```yaml
+before_script:
+  - echo "before-script!!"
+
+variables:
+  DOMAIN: example.com
+  
+stages:
+  - build
+  - test
+  - codescan
+  - deploy
+
+build:
+  before_script:
+    - echo "before-script in job"
+  stage: build
+  script:
+    - echo "mvn clean "
+    - echo "mvn install"
+    - echo "$DOMAIN"
+  after_script:
+    - echo "after script in buildjob"
+
+unittest:
+  stage: test
+  script:
+    - ech "run test"
+  when: delayed
+  start_in: '10'
+  allow_failure: true
+  
+
+deploy:
+  stage: deploy
+  script:
+    - echo "hello deploy"
+    - sleep 2;
+  when: manual
+  
+codescan:
+  stage: codescan
+  script:
+    - echo "codescan"
+    - sleep 5;
+  when: on_success
+ 
+after_script:
+  - echo "after-script"
+  - ech
+  
+
+```
+
+
+
+
+
+#### retry
+失败重试次数
+
+```yaml
+deploy:
+  stage: deploy
+  script:
+    - echo "hello deploy"
+    - sleep 2;
+  when: manual
+  retry: 2
+```
+
+max：最大重试次数
+
+when ：重试失败的案例
+
+最大重试次数必须小于或等于 2
+
+```yaml
+unittest:
+  stage: test
+  script:
+    - ech "run test"
+  when: delayed
+  start_in: '3'
+  retry: 
+    max: 2
+    when: 
+      - script_failure
+```
+
+
+
+```yaml
+always ：在发生任何故障时重试（默认）.
+unknown_failure ：当失败原因未知时。
+script_failure ：脚本失败时重试。
+api_failure ：API失败重试。
+stuck_or_timeout_failure ：作业卡住或超时时。
+runner_system_failure ：运行系统发生故障。
+missing_dependency_failure: 如果依赖丢失。
+runner_unsupported ：Runner不受支持。
+stale_schedule ：无法执行延迟的作业。
+job_execution_timeout ：脚本超出了为作业设置的最大执行时间。
+archived_failure ：作业已存档且无法运行。
+unmet_prerequisites ：作业未能完成先决条件任务。
+scheduler_failure ：调度程序未能将作业分配给运行scheduler_failure。
+data_integrity_failure ：检测到结构完整性问题。
+```
+
+![](https://cdn.nlark.com/yuque/0/2025/png/27875807/1762324912413-41fb673d-5210-4b2f-878d-c9e761353b7b.png)
+
+
+
+#### timeout
+作业超时，两种写法
+
+```yaml
+build:
+  script: build.sh
+  timeout: 1 hours 30 minutes
+  
+or
+
+test:
+  script: rspec
+  timeout: 3h 30m
+```
+
+Runner 的超时
+
+![](https://cdn.nlark.com/yuque/0/2025/png/27875807/1762325449835-6357d67b-fc13-405f-b5cd-64fca7fcbebe.png)
+
+runner 设置 24h，项目 cicd 设置 为 2 小时，该工作超时为 2 小时
+
+runner 不设置，项目 cide 设置 2 小时，该工作超时 为 2 小时
+
+
+
+#### parallel
+并行作业，配置要并行运行的作业实例数,此值必须大于或等于2并且小于或等于50。
+
+```yaml
+codescan:
+  stage: codescan
+  script:
+    - echo "codescan"
+    - sleep 2;
+  when: on_success
+  parallel: 5
+```
+
+![](https://cdn.nlark.com/yuque/0/2025/png/27875807/1762325760339-d1f1837d-6232-4440-afae-6cb1bf6244a9.png)
+
+### pipeline 语法 3
+#### only & except
+only 和 except 是两个参数用分支策略来限制jobs构建
+
++ only定义哪些分支和标签的git项目将会被job执行
++ except定义哪些分支和标签的git项目将不会被job执行
+
+逐渐遗弃
+
+只执行 issus 分支，通过正则匹配，其他分支排除
+
+```yaml
+job:
+  # use regexp
+  only:
+    - /^issue-.*$/
+  # use special keyword
+  except:
+    - branches
+
+```
+
+
+
+#### rules
+构建规则，按顺序匹配，第一个不匹配往下，直到匹配
+
+rules 不能与 only/except 组合使用
+
+```yaml
+if （通过条件匹配）
+changes （ 检查文件内容是否被修改）
+exists（检查文件是否存在）
+```
+
+如果 domain==example.com
+
+执行 when: manual
+
+否则往下执行，执行 on_success
+
+if
+
+```yaml
+deploy:
+  stage: deploy
+  script:
+    - echo "hello deploy"
+    - sleep 2;
+  when: manual
+  rules:
+    - if: '$DOMAIN == "example.com"'
+      when: manual
+    - when: on_success
+```
+
+changes
+
+如果 test.txt 发生了变化，执行手动作业，如果没有发生变化，执行on_failure
+
+```yaml
+deploy:
+  stage: deploy
+  script:
+    - echo "hello deploy"
+    - sleep 2;
+  when: manual
+  rules:
+    - changes: 
+      - test.txt
+      when: manual
+    - when: on_failure
+```
+
+exists
+
+如果 test1.txt 存在，执行 延迟 5 秒
+
+```yaml
+codescan:
+  stage: codescan
+  script:
+    - echo "codescan"
+    - sleep 5;
+  when: on_success
+  rules:
+    - exists: 
+      - test1.txt
+      when: delayed
+      start_in: 5s
+```
+
+
+
+#### workflow:rules
+顶级workflow:关键字适用于整个管道，并将确定是否创建管道。when ：可以设置为always或never . 如果未提供，则默认值always。
+
+```yaml
+variables:
+  DOMAIN: 1example.com
+
+workflow:
+  rules:
+    - if: '$DOMAIN == "example.com"'
+    - when: always
+
+```
+
+
+
+
+
+
+
+### pipeline 语法 4
+#### cache
+缓存，存储项目在编译时候产生的依赖，在项目空间中需要传递的文件或目录
+
+
+
+```yaml
+cache:paths（指定缓存文件或目录）
+cache:key（缓存标记）
+cache:police（策略）
+```
+
+paths
+
+在job build中定义缓存，将会缓存target目录下的所有.jar文件。
+
+```yaml
+build:
+  script: test
+  cache:
+    paths:
+      - target/*.jar
+
+```
+
+
+
+key
+
+由于缓存是在job之间共享的，如果不同的job使用不同的路径就出现了缓存覆盖的问题。如何让不同的job缓存不同的cache呢？设置不同的cache:key。
+
+
+
+为不同的 job 定义了不同的 cache:key 时，会为每个 job 分配独立的 cache
+
+cache:key 变量可以使用任何预定义变量，默认 default
+
+```yaml
+cache:
+  paths:
+    - my/files
+
+build:
+  script: echo "hello"
+  cache:
+    key: build
+    paths:
+      - target/
+
+```
+
+files，最多可以指定两个文件，这两个文件发生变化，重新产生缓存
+
+prefix，略
+
+
+
+```yaml
+cache:
+  key:
+    files:
+      - Gemfile.lock
+      - package.json
+  paths:
+    - vendor/ruby
+    - node_modules
+
+```
+
+
+
+police
+
+缓存策略，默认：在执行开始时下载文件，并在结束时重新上传文件。称为" pull-push缓存策略
+
+比如 job1 打包，job2 测试，job1 不需要缓存，它是产生缓存的，但它执行后给到 job2，job2 需要缓存测试，所以可使用 police 跳过下载步骤
+
+policy: pull 跳过下载步骤
+
+policy: push 跳过上传步骤
+
+
+
+流水线第一次运行的结果会被下一次运行直接使用，如果出现构建失败的情况，可以在 runner 里去把缓存清掉，尝试重新构建/home/gitlab-runner/
+
+```yaml
+stages:
+  - setup
+  - test
+
+prepare:
+  stage: setup
+  cache:
+    key: gems
+    paths:
+      - vendor/bundle
+  script:
+    - bundle install --deployment
+
+rspec:
+  stage: test
+  cache:
+    key: gems
+    paths:
+      - vendor/bundle
+    policy: pull
+  script:
+    - bundle exec rspec ...
+
+```
+
+
+
+
+
+#### aftifacts
+制品，用于指定在作业成功或者失败时应附加到作业的文件或目录的列表。作业完成后，工件将被发送到GitLab，并可在GitLab UI中下载。
+
+```yaml
+aftifacts:paths（指定制品路径）
+artifacts:expose_as（在合并请求UI中公开作业都工件）
+artifacts:name（定义创建工件时候都名称，默认是artifacts）
+artifacts:when（仅在作业失败时上传工件）
+artifacts:expire_in（制品的有效期，从上传和存储到GitLab的时间开始算起。如果未定义过期时间，则默认为30天）
+artifacts:reports（用于从作业中收集测试报告，代码质量报告和安全报告. 在GitLab的UI中显示这些报告）
+artifacts:reports:junit（）
+```
+
+artifacts:paths
+
+路径是相对于项目目录的，不能直接链接到项目目录之外
+
+将制品设置为target目录
+
+```yaml
+artifacts:
+  paths:
+    - target/
+```
+
+artifacts:expose_as
+
+关键字expose_as可用于在合并请求 UI中公开作业工件。
+
++ 每个合并请求最多可以公开10个作业工件。
++ 如果指定了目录，那么如果目录中有多个文件，则该链接将指向指向作业工件浏览器。
++ 如果开启GitlabPages可以对.html .htm .txt .json .log扩展名单个文件工件渲染工件。
+
+```yaml
+test:
+  script: 
+    - echo 1
+  artifacts:
+    expose_as: 'artifact 1'
+    paths: 
+      - path/to/file.txt
+```
+
+artifacts:name
+
+通过name指令定义所创建的工件存档的名称。可以为每个存档使用唯一的名称。 artifacts:name变量可以使用任何预定义变量。默认名称是artifacts，下载artifacts改为artifacts.zip
+
+```yaml
+job:
+  artifacts:
+    name: "$CI_JOB_NAME"
+    paths:
+      - binaries/
+
+```
+
+
+
+artifacts:when
+
+用于在作业失败时或尽管失败而上传工件。on_success仅在作业成功时上载工件。这是默认值。on_failure仅在作业失败时上载工件。always 上载工件，无论作业状态如何。
+
+
+
+要仅在作业失败时上传工件：
+
+```yaml
+job:
+  artifacts:
+    when: on_failure
+```
+
+
+
+
+
+artifacts:expire_in
+
+制品的有效期，从上传和存储到GitLab的时间开始算起。如果未定义过期时间，则默认为30天。
+
+
+
+expire_in的值以秒为单位的经过时间，除非提供了单位。可解析值的示例：
+
+```yaml
+job:
+  artifacts:
+    expire_in: 1 week
+```
+
+
+
+artifacts:reports
+
+用于从作业中收集测试报告，代码质量报告和安全报告. 在GitLab的UI中显示这些报告。
+
+
+
+注意：无论作业结果（成功或失败），都将收集测试报告。
+
+
+
+artifacts:reports:junit
+
+收集junit单元测试报告，收集的JUnit报告将作为工件上传到GitLab，并将自动显示在合并请求中
+
+```yaml
+build:
+  stage: build
+  tags:
+    - build
+  only:
+    - master
+  script:
+    - mvn test
+    - mvn cobertura:cobertura
+    - ls target
+  artifacts:
+    name: "$CI_JOB_NAME-$CI_COMMIT_REF_NAME"
+    when: on_success
+    expose_as: 'artifact 1'
+    paths:
+      - target/*.jar
+    reports:
+      junit: target/surefire-reports/TEST-*.xml
+
+```
+
+
+
+### pipeline 语法 5
+#### needs
+并行阶段，可无序执行作业，无需按照阶段顺序运行某些作业，可以让多个阶段同时运行。
+
+needs: ["module-a-build"]，在执行module-a-build 的时候执行当前 job
+
+```yaml
+stages:
+  - build
+  - test
+  - deploy
+
+module-a-build:
+  stage: build
+  script: 
+    - echo "hello3a"
+    - sleep 10
+    
+module-b-build:
+  stage: build
+  script: 
+    - echo "hello3b"
+    - sleep 10
+
+module-a-test:
+  stage: test
+  script: 
+    - echo "hello3a"
+    - sleep 10
+  needs: ["module-a-build"]
+    
+module-b-test:
+  stage: test
+  script: 
+    - echo "hello3b"
+    - sleep 10
+  needs: ["module-b-build"]
+    
+
+```
+
+![](https://cdn.nlark.com/yuque/0/2025/png/27875807/1762350182876-16690b67-8ec9-4381-a14f-77ea2e4986b2.png)
+
+
+
+#### 制品下载
+在使用needs，可通过artifacts: true或artifacts: false来控制工件下载。 默认不指定为true。
+
+```yaml
+module-a-test:
+  stage: test
+  script: 
+    - echo "hello3a"
+    - sleep 10
+  needs: 
+    - job: "module-a-build"
+      artifacts: true
+
+```
+
+
+
+#### include
+可以允许引入外部YAML文件，文件具有扩展名.yml或.yaml 。使用合并功能可以自定义和覆盖包含本地定义的CI / CD配置。相同的job会合并，参数值以源文件为准。
+
+```yaml
+include:local（引入本地文件）
+```
+
+引入同一存储库中的文件，使用相对于根目录的完整路径进行引用，与配置文件在同一分支上使用。
+
+
+
+ci/localci.yml: 定义一个作业用于发布。
+
+```yaml
+stages:
+  - deploy
+  
+deployjob:
+  stage: deploy
+  script:
+    - echo 'deploy'
+
+```
+
+.gitlab-ci.yml 引入本地的CI文件'ci/localci.yml'。
+
+
+
+1.yaml 的文件存放在项目根目录的 ci 下
+
+```yaml
+include:
+  - local: "ci/1.yaml"
+
+stages:
+  - build
+  - test
+  - deploy
+
+buildjob:
+  stage: build
+  script: ls
+
+testjob:
+  stage: test
+  script: ls && id
+```
+
+
+
+
+
+
+
+
+
+## 一个简单项目
 基础环境：
 
 两台 ubuntu server 2404
