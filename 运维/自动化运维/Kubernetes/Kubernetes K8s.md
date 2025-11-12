@@ -513,7 +513,7 @@ Linux 原生内核支持
 
 相比 vxlan 相对简单，将当前 ip 封装到新的 ip 包当中，所以叫 ipip
 
-![](https://cdn.nlark.com/yuque/0/2025/png/27875807/1762931495837-6755728f-8f9f-4044-8471-dce63d4abe3c.png)
+![](https://cdn.nlark.com/yuque/0/2025/png/27875807/1762964038301-fd625db1-17bb-4867-936f-700660bd1690.png)
 
 ![](https://cdn.nlark.com/yuque/0/2025/png/27875807/1762931584699-5fc8ed51-32ee-4409-8725-c1ccf0dffc9e.png)
 
