@@ -274,6 +274,16 @@ spec:
         image: docker.xuanyuan.run/nginx:alpine
 ```
 
+快速创建一个模版
+
+```yaml
+kubectl create deployment testtemp --image docker.xuanyuan.run/nginx:alpine --dry-run -o yaml > test_deployment.yaml
+```
+
+![](https://cdn.nlark.com/yuque/0/2025/png/27875807/1763965875979-ccfe4a26-9e4f-47fa-8e26-889a56448e34.png)
+
+
+
 create 与 apply 的区别
 
 ```yaml
@@ -733,3 +743,188 @@ cp deployment.yaml 202511202053-wpsec-image-latest-deployment.yaml
 执行命令    再执行了回滚到 v3，剩下的 Pod 就不会再先到 v2 在到 v3，而是直接从 v1 到 v3
 
 v1——v2    v1——》v3
+
+## 
+#### 暂停与恢复
+暂停 Deployment 不会影响已经运行的 Pod，它是暂停了滚动更新
+
+![](https://cdn.nlark.com/yuque/0/2025/png/27875807/1763964342269-bc4a57a3-25ca-4404-b75f-1c308b210129.png)
+
+
+
+```yaml
+# 暂停 deployment
+kubectl rollout pause deployment deployment-demo
+```
+
+因为被暂停，即时修改了镜像，已经运行的也不会改变
+
+![](https://cdn.nlark.com/yuque/0/2025/png/27875807/1763965393691-6cbe7b6c-3d88-4de7-9848-30a694cc95d8.png)
+
+恢复，在恢复后因为镜像不同，重新运行了新的 Pod
+
+```yaml
+kubectl rollout resume deployment deployment-demo
+```
+
+![](https://cdn.nlark.com/yuque/0/2025/png/27875807/1763965453272-5fa885a8-4472-42d8-a935-5617adba295d.png)
+
+
+
+
+
+### DaemonSet（DS）
+确保每个或一些 Node 节点上都运行特定的 Pod，无论这个节点什么时候离开或加入集群，都会自动管理这些 Pod 的创建和删除。
+
+动态调整：加入、新增、移除、回收
+
+
+
+典型场景
+
+每个 Node 上运行监控、日志收集的 Pod，比如Prometheus Node Exporter、Datadog Agent 、Fluentd 等
+
+
+
+
+
+```yaml
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: daemonset-demo
+  labels:
+    app: daemonset-demo
+spec:
+  selector:
+    matchLabels:
+      name: daemonset-demo
+  template:
+    metadata:
+      labels:
+        name: daemonset-demo
+    spec:
+      containers:
+        - name: daemonset-demo-container
+          image: docker.xuanyuan.run/nginx:alpine
+
+```
+
+在没有设置 Pod 数量的情况下，DS 默认给每个 Node 都分配了一个 Pod
+
+![](https://cdn.nlark.com/yuque/0/2025/png/27875807/1763965606258-7b9643fd-f208-4ce1-aef0-6b2a5fe4df95.png)
+
+新创建的 Pod，只运行在 node 上，不运行在 master 上，master 有一个污点
+
+![](https://cdn.nlark.com/yuque/0/2025/png/27875807/1763966072648-1646868f-89f8-4faf-94a5-2a2ea1496b46.png)
+
+### Job/CronJob
+#### Job
+批处理任务
+
+Job 负责仅执行一次性任务，它保证批处理任务的一个或多个 Pod 成功结束
+
+特点
+
++ spec.template 格式同 Pod
++ RestartPolicy 仅支持 never（一次性运行） 或 OnFailure（失败重启）不支持Always（无条件重启容器）
++ 单个 Pod 时，默认成功运行后，Job 结束
++ completions，成功几次，默认 1，返回码 0 为成功，1 为失败
++ parallelism，标志并行 Pod 个数，默认为 1，比如并行数为 5，最大值为 5 即可，第一次创建 5 个，成功 2 个，第二次创建 3 个，成功 3 个，结束
++ activeDeadlineSeconds，失败 Pod 最大重试时间，默认单位秒
+
+
+
+completions=5：总共需要 5 次成功运行
+
+parallelism=3：最多并行跑 3 个 Pod
+
+backoffLimit=0：失败不重试 → Pod 失败后不会重新创建
+
+```yaml
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: job-demo
+  labels:
+    app: job-demo
+spec:
+  completions: 5
+  parallelism: 3
+  backoffLimit: 0
+  template:
+    metadata:
+      labels:
+        name: job-pod-demo
+    spec:
+      restartPolicy: Never
+      containers:
+      - name: job-demo-container
+        image: docker.xuanyuan.run/nginx:alpine
+        imagePullPolicy: IfNotPresent
+        command: ["sh", "-c", "echo start; sleep 5; exit 1"]
+```
+
+![](https://cdn.nlark.com/yuque/0/2025/png/27875807/1763968277725-f188c000-3935-4087-8c23-626281afcab0.png)
+
+
+
+#### CronJOB
+管理基于时间的 Job
+
++ 在给定时间只运行一次
++ 周期性的在给定时间点运行
++ spec.schedule：调度，必须字段，指定运行周期，格式通 Cron
++ spec.jobTemplate：job 模版，格式同 Job
++ spec.startingDeadlineSeconds：启动 Job 期限，单位秒，可选
++ spec.concurrencyPolicy：并发策略
+    - Allow（默认）：允许并发运行 Job
+    - Forbid：禁止并发，前一个没完成，跳过下一个
+    - Replace：如果前一个还在运行，取消前一个，运行新的
+    - 比如发邮件，默认并发；备份数据库，禁止并发
++ spec.suspend：挂起，设置为 true，后续的执行都会被挂起，已经开始执行的 Job 不受影响，理解为虚拟机挂起，需要时，快速访问，不需要时挂起，默认 false
++ spec.successfulJobsHistoryLimit 和 spec.failedJobsHistoryLimit：历史限制，保留多少 Job，默认保留 3 个 Job 信息和 1 个最近失败的 Job 信息
+
+
+
+没分钟执行一次、保留 3 条成功记录、保留 1 条失败记录
+
+```yaml
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: cronjob-demo
+  labels:
+    app: cronjob-demo
+spec:
+  schedule: "*/1 * * * *"
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 1
+
+  jobTemplate:
+    spec:
+      backoffLimit: 0
+      template:
+        metadata:
+          labels:
+            name: cronjob-pod-demo
+        spec:
+          restartPolicy: Never
+          containers:
+            - name: cronjob-demo-container
+              image: docker.xuanyuan.run/nginx:alpine
+              imagePullPolicy: IfNotPresent
+              command:
+                - sh
+                - "-c"
+                - |
+                  echo "CronJob start at $(date)"
+                  sleep 10
+                  echo "Finish"
+
+```
+
+![](https://cdn.nlark.com/yuque/0/2025/png/27875807/1763973982386-ae466f00-e633-420c-97c9-73fa15177e22.png)
+
+
+
